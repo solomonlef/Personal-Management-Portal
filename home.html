@@ -142,6 +142,7 @@
             border: 1px solid var(--primary);
             border-radius: 8px;
             font-weight: 500;
+            font-size: 0.9rem;
             cursor: pointer;
             transition: all 0.2s ease;
             display: inline-flex;
@@ -195,6 +196,7 @@
                         <option value="GST">GST</option>
                         <option value="TDS">TDS</option>
                         <option value="Trade Mark">Trade Mark</option>
+                        <option value="Trade License">Trade License</option>
                         <option value="Addhar cards">Addhar cards</option>
                     </select>
                 </div>
@@ -235,7 +237,7 @@
         const PARADISE_ONLINE_ID = "1n6TUS3eEhajlFmUJESYZGSofjEamDU0W";
 
         let currentId = "";
-        let currentType = ""; // 'sheet', 'doc', or 'local'
+        let currentType = ""; 
 
         document.getElementById('filterForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -252,25 +254,37 @@
             currentId = "";
             currentType = "";
 
-            // Mapping Logic
-            if (category === "GST" && year === "2025") {
-                currentId = "GST 2024-2025.pdf"; // Local GST file
+            // --- Mapping Logic ---
+            
+            // Local Trade License 2026
+            if (category === "Trade License" && year === "2026") {
+                currentId = "Trade License 2026.pdf";
+                currentType = "local";
+                frame.src = currentId;
+                downloadBtn.innerHTML = "⬇️ Download Trade License";
+            }
+            // Local GST 2025
+            else if (category === "GST" && year === "2025") {
+                currentId = "GST 2024-2025.pdf"; 
                 currentType = "local";
                 frame.src = currentId;
                 downloadBtn.innerHTML = "⬇️ Download GST PDF";
             }
+            // Local ITR 2025
             else if (category === "ITR" && year === "2025") {
                 currentId = "ITR.pdf";
                 currentType = "local";
                 frame.src = currentId;
                 downloadBtn.innerHTML = "⬇️ Download ITR PDF";
             } 
+            // Google Sheets: Phone Numbers 2025
             else if (category === "Phone numbers" && year === "2025") {
                 currentId = PHONE_SHEET_ID;
                 currentType = "sheet";
                 frame.src = `https://docs.google.com/spreadsheets/d/${currentId}/preview`;
                 downloadBtn.innerHTML = "⬇️ Download Excel";
             } 
+            // Google Docs: Paradise Menus 2026
             else if (category === "RK Paradise Offline menu" && year === "2026") {
                 currentId = PARADISE_OFFLINE_ID;
                 currentType = "doc";
@@ -284,12 +298,13 @@
                 downloadBtn.innerHTML = "⬇️ Download PDF";
             }
 
-            // UI Display Control
+            // --- UI Display Control ---
             if (currentId) {
                 frame.style.display = 'block';
                 placeholder.innerHTML = `Showing results for: <strong>${category}</strong> - <strong>${year}</strong>`;
                 actionButtons.classList.remove('hidden');
                 
+                // If local file, hide Edit and Share (as they only work for Cloud docs)
                 if (currentType === "local") {
                     editBtn.classList.add('hidden');
                     shareBtn.classList.add('hidden');
