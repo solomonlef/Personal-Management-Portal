@@ -6,7 +6,7 @@
     <title>RK Group | Management Reports</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-        /* ----- original styles (unchanged) ----- */
+        /* ----- all your original styles, unchanged ----- */
         :root {
             --primary: #2563eb;
             --bg-dark: #0f172a;
@@ -25,7 +25,6 @@
             align-items: center;
             min-height: 100vh;
         }
-        /* ----- header with three columns for perfect centering ----- */
         .header {
             width: 100%;
             padding: 2.5rem 2rem;
@@ -38,7 +37,7 @@
             box-sizing: border-box;
         }
         .header-left, .header-right {
-            flex: 1; /* equal width columns */
+            flex: 1;
             display: flex;
             align-items: center;
         }
@@ -485,7 +484,7 @@
 
     <!-- header with three columns for perfect centering -->
     <div class="header">
-        <div class="header-left"></div> <!-- empty left spacer -->
+        <div class="header-left"></div>
         <div class="header-title">
             <h1>Personal Management Portal</h1>
             <p>Operational Reports & Real-time Documentation</p>
@@ -495,7 +494,7 @@
         </div>
     </div>
 
-    <!-- login modal (centered heading) -->
+    <!-- login modal -->
     <div id="loginOverlay">
         <div>
             <h3>admin</h3>
@@ -511,7 +510,6 @@
     <div id="adminPanel" class="admin-panel">
         <h3>📁 Upload / link report (manual override)</h3>
         
-        <!-- redesigned upload grid -->
         <div class="upload-grid">
             <div class="upload-row">
                 <div class="upload-field">
@@ -548,14 +546,12 @@
 
         <div class="existing-mappings">
             <h4 style="margin-bottom:12px; color:#b4d0f0;">📌 current overrides — table view</h4>
-            <!-- year filter dropdown -->
             <div class="filter-toolbar">
                 <span>Filter by year:</span>
                 <select id="filterYearSelect">
                     <option value="">All years</option>
                 </select>
             </div>
-            <!-- table wrapper -->
             <div class="table-wrapper">
                 <table id="mappingTable">
                     <thead>
@@ -575,7 +571,7 @@
             <p class="small-note">✎ edit fills the form. Delete per row.</p>
         </div>
 
-        <!-- manage categories section with collapsible dropdown (initially collapsed) -->
+        <!-- manage categories section (still localStorage) -->
         <div class="manage-categories">
             <div class="category-header" id="categoryHeader">
                 <span class="arrow" id="categoryArrow">▶</span>
@@ -628,9 +624,17 @@
         </div>
     </div>
 
+    <!-- Supabase client library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <script>
         (function() {
-            // ----- constants -----
+            // ---------- SUPABASE INITIALIZATION ----------
+            const SUPABASE_URL = 'https://ytstrkghwbmlmxtrjujv.supabase.co';
+            const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl0c3Rya2dod2JtbG14dHJqdWp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1Njk3OTgsImV4cCI6MjA4ODE0NTc5OH0.JnsdH2E5TTJI55Uy5dVSb4iAcRpI63GH1kkeXlvFfgU';
+            const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+            // ---------- CONSTANTS ----------
             const PHONE_SHEET_ID = "1tAukTsFEJ8H5DSoAIQaOiOX2Z3aPqJmN8quXWXzKJVA";
             const PARADISE_OFFLINE_ID = "1SFIu0yoQI5G6OEZGSK5CS_5eohhVWY8g";
             const PARADISE_ONLINE_ID = "1n6TUS3eEhajlFmUJESYZGSofjEamDU0W";
@@ -652,43 +656,51 @@
                 "Trade Mark", "Trade License", "Addhar cards"
             ];
 
-            const STORAGE_MAP_KEY = 'rk_admin_mappings';
             const STORAGE_CATS_KEY = 'rk_categories';
-            const STORAGE_PASS_KEY = 'rk_admin_password'; // for password
 
             if (!localStorage.getItem(STORAGE_CATS_KEY)) {
                 localStorage.setItem(STORAGE_CATS_KEY, JSON.stringify(DEFAULT_CATEGORIES));
             }
-            // initialize default password if not set
-            if (!localStorage.getItem(STORAGE_PASS_KEY)) {
-                localStorage.setItem(STORAGE_PASS_KEY, 'admin123');
-            }
 
-            let adminMappings = {};
-            try {
-                adminMappings = JSON.parse(localStorage.getItem(STORAGE_MAP_KEY)) || {};
-            } catch { adminMappings = {}; }
-
+            // ---------- GLOBAL VARIABLES ----------
+            let adminMappings = {};   // will be populated from Supabase
             let adminLoggedIn = false;
             let currentReport = { id: "", type: "", isLocal: false };
             let currentFilterYear = ''; // '' = all years
-
-            // for drag & drop
             let draggedIndex = null;
 
-            function saveMappingsToStorage() {
-                localStorage.setItem(STORAGE_MAP_KEY, JSON.stringify(adminMappings));
+            // ---------- SUPABASE HELPER FUNCTIONS (using lowercase column names) ----------
+            async function loadMappingsFromSupabase() {
+                try {
+                    const { data, error } = await supabase
+                        .from('mappings')
+                        .select('*');
+                    if (error) throw error;
+
+                    const mappings = {};
+                    data.forEach(row => {
+                        const key = `${row.category}||${row.year}`;
+                        mappings[key] = {
+                            id: row.id,
+                            type: row.filetype,      // lowercase
+                            fileId: row.fileid,       // lowercase
+                            isLocal: row.filetype === 'pdf'
+                        };
+                    });
+                    return mappings;
+                } catch (error) {
+                    console.error('Error loading from Supabase:', error);
+                    return {};
+                }
             }
 
-            // ----- helper: get all years that exist in any mapping (admin+fallback) -----
+            // ---------- UI UPDATE FUNCTIONS (mostly unchanged) ----------
             function getAllExistingYears() {
                 const yearsSet = new Set();
-                // from admin mappings
                 Object.keys(adminMappings).forEach(key => {
                     const [, yr] = key.split('||');
                     if (yr) yearsSet.add(yr);
                 });
-                // from fallback
                 Object.keys(FALLBACK_MAP).forEach(key => {
                     const [, yr] = key.split('||');
                     if (yr) yearsSet.add(yr);
@@ -696,7 +708,6 @@
                 return Array.from(yearsSet).map(y => parseInt(y,10)).sort((a,b)=>a-b);
             }
 
-            // ----- populate main category dropdown -----
             function populateCategoryDropdown(selectedVal = '') {
                 const cats = JSON.parse(localStorage.getItem(STORAGE_CATS_KEY)) || DEFAULT_CATEGORIES;
                 const select = document.getElementById('check');
@@ -709,21 +720,17 @@
                 });
             }
 
-            // ----- populate main year dropdown based on selected category -----
             function populateMainYearDropdownForCategory(category) {
                 const yearSelect = document.getElementById('year');
                 if (!category) {
                     yearSelect.innerHTML = '<option value="" disabled selected>Select Year...</option>';
                     return;
                 }
-                // gather years that have data for this category (admin + fallback)
                 const yearsSet = new Set();
-                // admin
                 Object.entries(adminMappings).forEach(([key]) => {
                     const [cat, yr] = key.split('||');
                     if (cat === category && yr) yearsSet.add(yr);
                 });
-                // fallback
                 Object.entries(FALLBACK_MAP).forEach(([key]) => {
                     const [cat, yr] = key.split('||');
                     if (cat === category && yr) yearsSet.add(yr);
@@ -741,7 +748,6 @@
                 }
             }
 
-            // ----- populate admin year dropdown (all existing years) -----
             function populateAdminYearDropdown(selectedYear = '') {
                 const years = getAllExistingYears();
                 const adminYearSelect = document.getElementById('adminYear');
@@ -750,7 +756,6 @@
                     const yStr = y.toString();
                     adminYearSelect.add(new Option(yStr, yStr, false, yStr === selectedYear));
                 });
-                // also populate the filter dropdown
                 const filterSelect = document.getElementById('filterYearSelect');
                 if (filterSelect) {
                     filterSelect.innerHTML = '<option value="">All years</option>';
@@ -761,7 +766,7 @@
                 }
             }
 
-            // ----- render admin mapping table with optional year filter -----
+            // ----- render admin mapping table (with data-id) -----
             function renderMappingTable() {
                 const tbody = document.getElementById('mappingTableBody');
                 if (!tbody) return;
@@ -771,7 +776,6 @@
                     return;
                 }
 
-                // filter by year if set
                 let filteredEntries = entries;
                 if (currentFilterYear) {
                     filteredEntries = entries.filter(([key]) => {
@@ -780,7 +784,6 @@
                     });
                 }
 
-                // sort by year desc, then category asc
                 filteredEntries.sort((a, b) => {
                     const [catA, yrA] = a[0].split('||');
                     const [catB, yrB] = b[0].split('||');
@@ -797,12 +800,12 @@
                 filteredEntries.forEach(([key, value]) => {
                     const [cat, yr] = key.split('||');
                     const typeIcon = value.type === 'pdf' ? '📄' : (value.type === 'sheet' ? '📊' : '📝');
-                    const fileDisplay = value.id.length > 40 ? value.id.substring(0,35) + '…' : value.id;
-                    html += `<tr data-key="${key}">`;
+                    const fileDisplay = value.fileId.length > 40 ? value.fileId.substring(0,35) + '…' : value.fileId;
+                    html += `<tr data-id="${value.id}" data-key="${key}">`;
                     html += `<td>${cat}</td>`;
                     html += `<td>${yr}</td>`;
                     html += `<td>${typeIcon} ${value.type}</td>`;
-                    html += `<td class="file-id-cell" title="${value.id}">${fileDisplay}</td>`;
+                    html += `<td class="file-id-cell" title="${value.fileId}">${fileDisplay}</td>`;
                     html += `<td class="action-cell">`;
                     html += `<button class="edit-map" data-key="${key}">✎ edit</button>`;
                     html += `<button class="delete-map" data-key="${key}">delete</button>`;
@@ -811,24 +814,34 @@
                 });
                 tbody.innerHTML = html;
 
-                // attach delete handlers
+                // delete handler
                 document.querySelectorAll('.delete-map').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
+                    btn.addEventListener('click', async (e) => {
                         const key = e.target.dataset.key;
                         if (!key || !adminMappings[key]) return;
+                        const recordId = adminMappings[key].id;
+                        if (!recordId) return;
                         if (confirm('Are you sure you want to delete this mapping?')) {
-                            delete adminMappings[key];
-                            saveMappingsToStorage();
-                            renderMappingTable();
-                            renderCategoryList();
-                            populateAdminYearDropdown(); // refresh year dropdowns
-                            const selectedCat = document.getElementById('check').value;
-                            if (selectedCat) populateMainYearDropdownForCategory(selectedCat);
+                            try {
+                                const { error } = await supabase
+                                    .from('mappings')
+                                    .delete()
+                                    .match({ id: recordId });
+                                if (error) throw error;
+                                adminMappings = await loadMappingsFromSupabase();
+                                renderMappingTable();
+                                renderCategoryList();
+                                populateAdminYearDropdown();
+                                const selectedCat = document.getElementById('check').value;
+                                if (selectedCat) populateMainYearDropdownForCategory(selectedCat);
+                            } catch (err) {
+                                alert('Delete failed: ' + err.message);
+                            }
                         }
                     });
                 });
 
-                // attach edit handlers
+                // edit handler
                 document.querySelectorAll('.edit-map').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         const key = e.target.dataset.key;
@@ -841,14 +854,14 @@
                         document.getElementById('adminYear').value = yr;
                         document.getElementById('adminNewYear').value = yr;
                         document.getElementById('adminFileType').value = mapping.type;
-                        document.getElementById('adminFileId').value = mapping.id;
+                        document.getElementById('adminFileId').value = mapping.fileId;
 
                         document.querySelector('.upload-grid').scrollIntoView({ behavior: 'smooth' });
                     });
                 });
             }
 
-            // ----- render category list with drag & drop and delete buttons (with two-step confirm) -----
+            // ----- render category list (unchanged, still localStorage) -----
             function renderCategoryList() {
                 const container = document.getElementById('categoryList');
                 if (!container) return;
@@ -866,7 +879,6 @@
                 });
                 container.innerHTML = html;
 
-                // drag event listeners
                 const items = document.querySelectorAll('.category-item');
                 items.forEach(item => {
                     item.addEventListener('dragstart', handleDragStart);
@@ -876,32 +888,34 @@
                     item.addEventListener('dragend', handleDragEnd);
                 });
 
-                // delete category with two confirmations
                 document.querySelectorAll('.delete-cat-btn').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
+                    btn.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         const catToDelete = e.target.dataset.category;
                         if (!catToDelete) return;
 
-                        // First confirmation
                         if (!confirm(`Are you sure you want to delete category "${catToDelete}"?`)) return;
-                        // Second confirmation - warn about associated mappings
                         if (!confirm(`⚠️ This will also delete ALL mappings under "${catToDelete}". Are you absolutely sure?`)) return;
 
-                        // Proceed with deletion
+                        // Delete from Supabase
+                        try {
+                            const { error } = await supabase
+                                .from('mappings')
+                                .delete()
+                                .eq('category', catToDelete);
+                            if (error) throw error;
+                        } catch (err) {
+                            alert('Error deleting category mappings: ' + err.message);
+                            return;
+                        }
+
+                        // Update localStorage categories
                         let cats = JSON.parse(localStorage.getItem(STORAGE_CATS_KEY)) || DEFAULT_CATEGORIES;
                         cats = cats.filter(c => c !== catToDelete);
                         localStorage.setItem(STORAGE_CATS_KEY, JSON.stringify(cats));
 
-                        const newMappings = {};
-                        Object.entries(adminMappings).forEach(([key, value]) => {
-                            const [cat] = key.split('||');
-                            if (cat !== catToDelete) {
-                                newMappings[key] = value;
-                            }
-                        });
-                        adminMappings = newMappings;
-                        saveMappingsToStorage();
+                        // Reload mappings
+                        adminMappings = await loadMappingsFromSupabase();
 
                         populateCategoryDropdown();
                         renderMappingTable();
@@ -920,7 +934,7 @@
                 });
             }
 
-            // drag & drop handlers
+            // drag & drop handlers (unchanged)
             function handleDragStart(e) {
                 const item = e.target.closest('.category-item');
                 if (!item) return;
@@ -978,7 +992,7 @@
                 draggedIndex = null;
             }
 
-            // ----- login/logout UI -----
+            // ---------- LOGIN / LOGOUT with Supabase Auth ----------
             const loginBtn = document.getElementById('adminToggleBtn');
             const loginOverlay = document.getElementById('loginOverlay');
             const adminPanel = document.getElementById('adminPanel');
@@ -989,7 +1003,7 @@
             const cancelLogin = document.getElementById('cancelLogin');
             const logoutBtn = document.getElementById('adminLogoutBtn');
 
-            function setAdminUI(state) {
+            async function setAdminUI(state) {
                 adminLoggedIn = state;
                 if (state) {
                     loginBtn.textContent = '🔓 Admin panel';
@@ -997,6 +1011,7 @@
                     adminPanel.classList.add('visible');
                     mainContainer.classList.add('hidden');
                     resultsSection.classList.add('hidden');
+                    adminMappings = await loadMappingsFromSupabase();
                     renderMappingTable();
                     renderCategoryList();
                     populateAdminYearDropdown();
@@ -1009,15 +1024,27 @@
                 }
             }
 
-            // login function
-            function performLogin() {
+            // Check if already logged in
+            (async function checkSession() {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session) {
+                    setAdminUI(true);
+                }
+            })();
+
+            async function performLogin() {
                 const enteredPass = passInput.value;
-                const storedPass = localStorage.getItem(STORAGE_PASS_KEY);
-                if (enteredPass === storedPass) {
+                const email = 'solomonmosessmith@gmail.com';
+                try {
+                    const { data, error } = await supabase.auth.signInWithPassword({
+                        email: email,
+                        password: enteredPass,
+                    });
+                    if (error) throw error;
                     loginOverlay.style.display = 'none';
                     setAdminUI(true);
-                } else {
-                    alert('wrong password');
+                } catch (error) {
+                    alert('Login failed: ' + error.message);
                 }
             }
 
@@ -1042,35 +1069,45 @@
             });
             window.addEventListener('click', (e) => { if (e.target === loginOverlay) loginOverlay.style.display = 'none'; });
 
-            // Enter key on password field
             window.handleKeyPress = function(e) {
                 if (e.key === 'Enter') {
-                    e.preventDefault(); // prevent any form submission
+                    e.preventDefault();
                     performLogin();
                 }
             };
 
-            // ----- Reset password with old password verification -----
-            document.getElementById('resetPasswordBtn').addEventListener('click', () => {
+            // ----- Reset password using Supabase -----
+            document.getElementById('resetPasswordBtn').addEventListener('click', async () => {
                 const oldPass = prompt('Enter current password:');
                 if (!oldPass) return;
-                const storedPass = localStorage.getItem(STORAGE_PASS_KEY);
-                if (oldPass !== storedPass) {
-                    alert('Incorrect current password.');
-                    return;
+                const email = 'solomonmosessmith@gmail.com';
+                try {
+                    // Verify by attempting to sign in
+                    const { error } = await supabase.auth.signInWithPassword({
+                        email: email,
+                        password: oldPass,
+                    });
+                    if (error) throw new Error('Incorrect current password.');
+                    
+                    const newPass = prompt('Enter new password:');
+                    if (!newPass) return;
+                    const confirmPass = prompt('Confirm new password:');
+                    if (newPass !== confirmPass) {
+                        alert('New passwords do not match!');
+                        return;
+                    }
+                    const { error: updateError } = await supabase.auth.updateUser({
+                        password: newPass
+                    });
+                    if (updateError) throw updateError;
+                    alert('Password changed successfully.');
+                } catch (err) {
+                    alert(err.message);
                 }
-                const newPass = prompt('Enter new password:');
-                if (!newPass) return;
-                const confirmPass = prompt('Confirm new password:');
-                if (newPass !== confirmPass) {
-                    alert('New passwords do not match!');
-                    return;
-                }
-                localStorage.setItem(STORAGE_PASS_KEY, newPass);
-                alert('Password changed successfully.');
             });
 
-            logoutBtn.addEventListener('click', () => {
+            logoutBtn.addEventListener('click', async () => {
+                await supabase.auth.signOut();
                 setAdminUI(false);
                 adminPanel.classList.remove('visible');
             });
@@ -1081,8 +1118,8 @@
                 renderMappingTable();
             });
 
-            // ----- save new mapping (admin) -----
-            document.getElementById('saveMappingBtn').addEventListener('click', () => {
+            // ----- save new mapping to Supabase (using lowercase column names) -----
+            document.getElementById('saveMappingBtn').addEventListener('click', async () => {
                 const catSelect = document.getElementById('adminCategory');
                 const newCat = document.getElementById('adminNewCat').value.trim();
                 let category = catSelect.value;
@@ -1108,35 +1145,44 @@
                     localStorage.setItem(STORAGE_CATS_KEY, JSON.stringify(cats));
                 }
 
-                // refresh category dropdowns
                 populateCategoryDropdown(category);
 
-                const key = `${category}||${year}`;
-                adminMappings[key] = { type: fileType, id: fileId, isLocal: (fileType === 'pdf') };
-                saveMappingsToStorage();
+                try {
+                    const { data, error } = await supabase
+                        .from('mappings')
+                        .insert([{
+                            category: category,
+                            year: year,
+                            filetype: fileType,   // lowercase
+                            fileid: fileId         // lowercase
+                        }])
+                        .select();
+                    if (error) throw error;
 
-                // clear inputs
-                document.getElementById('adminNewCat').value = '';
-                document.getElementById('adminNewYear').value = '';
-                document.getElementById('adminFileId').value = '';
+                    adminMappings = await loadMappingsFromSupabase();
 
-                // refresh all relevant UI
-                renderMappingTable();
-                renderCategoryList();
-                populateAdminYearDropdown();
+                    document.getElementById('adminNewCat').value = '';
+                    document.getElementById('adminNewYear').value = '';
+                    document.getElementById('adminFileId').value = '';
 
-                // if the selected category in main form matches, refresh its year dropdown
-                const selectedCat = document.getElementById('check').value;
-                if (selectedCat === category) {
-                    populateMainYearDropdownForCategory(category);
-                } else if (selectedCat) {
-                    populateMainYearDropdownForCategory(selectedCat);
+                    renderMappingTable();
+                    renderCategoryList();
+                    populateAdminYearDropdown();
+
+                    const selectedCat = document.getElementById('check').value;
+                    if (selectedCat === category) {
+                        populateMainYearDropdownForCategory(category);
+                    } else if (selectedCat) {
+                        populateMainYearDropdownForCategory(selectedCat);
+                    }
+
+                    alert('mapping saved');
+                } catch (error) {
+                    alert('Error saving: ' + error.message);
                 }
-
-                alert('mapping saved');
             });
 
-            // ----- collapsible categories (initially collapsed) -----
+            // ----- collapsible categories (unchanged) -----
             const categoryHeader = document.getElementById('categoryHeader');
             const categoryList = document.getElementById('categoryList');
             const categoryArrow = document.getElementById('categoryArrow');
@@ -1155,7 +1201,7 @@
             function getMapping(category, year) {
                 const key = `${category}||${year}`;
                 if (adminMappings[key]) {
-                    return { ...adminMappings[key], fromAdmin: true };
+                    return { ...adminMappings[key], fromAdmin: true, id: adminMappings[key].fileId };
                 }
                 if (FALLBACK_MAP[key]) {
                     return { ...FALLBACK_MAP[key], fromAdmin: false };
