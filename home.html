@@ -510,6 +510,7 @@
     <div id="adminPanel" class="admin-panel">
         <h3>📁 Upload / link report (manual override)</h3>
         
+        <!-- redesigned upload grid with file input -->
         <div class="upload-grid">
             <div class="upload-row">
                 <div class="upload-field">
@@ -538,6 +539,12 @@
             <div class="upload-field full-width">
                 <label>file identifier / URL *</label>
                 <input type="text" id="adminFileId" placeholder="PDF url OR google doc/sheet ID">
+            </div>
+            <!-- New file upload field -->
+            <div class="upload-field full-width">
+                <label>or upload local file</label>
+                <input type="file" id="adminFileUpload" accept=".pdf,.doc,.docx,.xlsx,.jpg,.png">
+                <small style="color: #94a3b8; display: block; margin-top: 5px;">If you upload a file, the URL above will be ignored</small>
             </div>
             <div class="button-row">
                 <button id="saveMappingBtn" class="btn-save">💾 SAVE MAPPING</button>
@@ -682,9 +689,9 @@
                         const key = `${row.category}||${row.year}`;
                         mappings[key] = {
                             id: row.id,
-                            type: row.filetype,      // lowercase
-                            fileId: row.fileid,       // lowercase
-                            isLocal: row.filetype === 'pdf'
+                            type: row.filetype,
+                            fileId: row.fileid,
+                            isLocal: row.filetype === 'pdf' && row.fileid.includes('/') // heuristic
                         };
                     });
                     return mappings;
@@ -694,7 +701,7 @@
                 }
             }
 
-            // ---------- UI UPDATE FUNCTIONS (mostly unchanged) ----------
+            // ---------- UI UPDATE FUNCTIONS ----------
             function getAllExistingYears() {
                 const yearsSet = new Set();
                 Object.keys(adminMappings).forEach(key => {
@@ -800,12 +807,18 @@
                 filteredEntries.forEach(([key, value]) => {
                     const [cat, yr] = key.split('||');
                     const typeIcon = value.type === 'pdf' ? '📄' : (value.type === 'sheet' ? '📊' : '📝');
-                    const fileDisplay = value.fileId.length > 40 ? value.fileId.substring(0,35) + '…' : value.fileId;
+                    // Display as clickable link if it's a URL
+                    let fileDisplay = value.fileId.length > 40 ? value.fileId.substring(0,35) + '…' : value.fileId;
+                    if (value.fileId.startsWith('http')) {
+                        fileDisplay = `<a href="${value.fileId}" target="_blank" style="color: var(--accent);">${fileDisplay}</a>`;
+                    } else {
+                        fileDisplay = `<span title="${value.fileId}">${fileDisplay}</span>`;
+                    }
                     html += `<tr data-id="${value.id}" data-key="${key}">`;
                     html += `<td>${cat}</td>`;
                     html += `<td>${yr}</td>`;
                     html += `<td>${typeIcon} ${value.type}</td>`;
-                    html += `<td class="file-id-cell" title="${value.fileId}">${fileDisplay}</td>`;
+                    html += `<td class="file-id-cell">${fileDisplay}</td>`;
                     html += `<td class="action-cell">`;
                     html += `<button class="edit-map" data-key="${key}">✎ edit</button>`;
                     html += `<button class="delete-map" data-key="${key}">delete</button>`;
@@ -855,6 +868,8 @@
                         document.getElementById('adminNewYear').value = yr;
                         document.getElementById('adminFileType').value = mapping.type;
                         document.getElementById('adminFileId').value = mapping.fileId;
+                        // Clear file input
+                        document.getElementById('adminFileUpload').value = '';
 
                         document.querySelector('.upload-grid').scrollIntoView({ behavior: 'smooth' });
                     });
@@ -1118,7 +1133,7 @@
                 renderMappingTable();
             });
 
-            // ----- save new mapping to Supabase (using lowercase column names) -----
+            // ----- save new mapping with optional file upload -----
             document.getElementById('saveMappingBtn').addEventListener('click', async () => {
                 const catSelect = document.getElementById('adminCategory');
                 const newCat = document.getElementById('adminNewCat').value.trim();
@@ -1131,9 +1146,45 @@
                 if (newYear !== '') year = newYear;
 
                 const fileType = document.getElementById('adminFileType').value;
-                const fileId = document.getElementById('adminFileId').value.trim();
+                const fileInput = document.getElementById('adminFileUpload');
+                const fileIdInput = document.getElementById('adminFileId').value.trim();
 
-                if (!category || !year || !fileId) {
+                let finalFileId = fileIdInput; // Will store either the URL or the storage path
+
+                // If a file was selected, upload it to Supabase Storage
+                if (fileInput.files.length > 0) {
+                    const file = fileInput.files[0];
+                    
+                    // Create a unique filename with timestamp to avoid overwrites
+                    const timestamp = Date.now();
+                    const safeFileName = `${timestamp}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+                    const filePath = `${category}/${year}/${safeFileName}`;
+                    
+                    try {
+                        // Upload file to Supabase Storage bucket 'reports'
+                        const { data: uploadData, error: uploadError } = await supabase.storage
+                            .from('reports')
+                            .upload(filePath, file, {
+                                cacheControl: '3600',
+                                upsert: false
+                            });
+                            
+                        if (uploadError) throw uploadError;
+                        
+                        // Get public URL of the uploaded file
+                        const { data: urlData } = supabase.storage
+                            .from('reports')
+                            .getPublicUrl(filePath);
+                            
+                        finalFileId = urlData.publicUrl;
+                        
+                    } catch (error) {
+                        alert('File upload failed: ' + error.message);
+                        return;
+                    }
+                }
+
+                if (!category || !year || !finalFileId) {
                     alert('category, year and file identifier are required');
                     return;
                 }
@@ -1153,18 +1204,21 @@
                         .insert([{
                             category: category,
                             year: year,
-                            filetype: fileType,   // lowercase
-                            fileid: fileId         // lowercase
+                            filetype: fileType,
+                            fileid: finalFileId
                         }])
                         .select();
                     if (error) throw error;
 
                     adminMappings = await loadMappingsFromSupabase();
 
+                    // clear inputs
                     document.getElementById('adminNewCat').value = '';
                     document.getElementById('adminNewYear').value = '';
                     document.getElementById('adminFileId').value = '';
+                    fileInput.value = ''; // Clear file input
 
+                    // refresh UI
                     renderMappingTable();
                     renderCategoryList();
                     populateAdminYearDropdown();
@@ -1176,7 +1230,7 @@
                         populateMainYearDropdownForCategory(selectedCat);
                     }
 
-                    alert('mapping saved');
+                    alert('mapping saved successfully');
                 } catch (error) {
                     alert('Error saving: ' + error.message);
                 }
